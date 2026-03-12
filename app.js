@@ -266,18 +266,19 @@ async function submitExpense() {
   try {
     const expense = { date, amount, payee, description, category, notes, person: settings.name };
 
-    // text/plain で送信することでCORSプリフライトを回避
+    // URLSearchParams形式で送信（GASとの相性が最も良い）
+    const params = new URLSearchParams({ payload: JSON.stringify(expense) });
     const res = await fetch(settings.scriptUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(expense),
+      body: params,
     });
 
-    // レスポンスが読めない場合もリクエストは送信済みなので成功扱い
-    if (res.ok) {
-      const result = await res.json().catch(() => ({ success: true }));
-      if (!result.success) throw new Error(result.error || '保存に失敗しました');
-    }
+    if (!res.ok) throw new Error(`通信エラー (HTTP ${res.status})`);
+
+    const text = await res.text();
+    let result;
+    try { result = JSON.parse(text); } catch { result = { success: false, error: text }; }
+    if (!result.success) throw new Error(result.error || '保存に失敗しました');
 
     addToHistory({ date, amount, payee, description, category });
     hideLoading();
