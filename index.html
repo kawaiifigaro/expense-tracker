@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#2563EB">
+  <title>経費精算システム</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loading-spinner"></div>
+    <p id="loading-message">処理中...</p>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <div id="app">
+
+    <!-- ==================== Setup Page ==================== -->
+    <div id="page-setup" class="page">
+      <div class="setup-container">
+        <div class="setup-logo">📊</div>
+        <h1>経費精算システム</h1>
+        <p class="setup-subtitle">初回設定を行ってください</p>
+
+        <div class="setup-info">
+          設定情報はこのブラウザにのみ保存されます。他の端末と共有されません。
+        </div>
+
+        <div class="form-group">
+          <label>あなたの名前 <span class="required">*</span></label>
+          <input type="text" id="setup-name" placeholder="例: 田中太郎" autocomplete="name">
+        </div>
+
+        <div class="form-group">
+          <label>Claude APIキー <span class="required">*</span></label>
+          <input type="password" id="setup-claude-key" placeholder="sk-ant-api03-...">
+          <small>Anthropic Console (console.anthropic.com) で取得できます</small>
+        </div>
+
+        <div class="form-group">
+          <label>Google OAuth クライアントID <span class="required">*</span></label>
+          <input type="text" id="setup-google-client-id"
+                 placeholder="000000000-xxxx.apps.googleusercontent.com">
+          <small>Google Cloud Console → APIとサービス → 認証情報 → OAuthクライアントID（Webアプリ）を作成。このページのURLを承認済みのJavaScriptオリジンに追加してください。</small>
+        </div>
+
+        <div class="form-group">
+          <label>スプレッドシートID <span class="required">*</span></label>
+          <input type="text" id="setup-sheet-id"
+                 placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+          <small>Google スプレッドシートのURLの <code>…/d/<b>ここの部分</b>/edit…</code></small>
+        </div>
+
+        <button class="btn btn-primary btn-full" onclick="saveSetup()">
+          設定を保存して開始
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== Main Page ==================== -->
+    <div id="page-main" class="page hidden">
+      <header class="app-header">
+        <span class="header-icon">📊</span>
+        <h1>経費精算</h1>
+        <button class="btn-icon" onclick="showSettings()" title="設定">⚙️</button>
+      </header>
+
+      <div class="main-content">
+
+        <!-- User Card -->
+        <div class="user-card">
+          <div class="user-info">
+            <span class="user-avatar">👤</span>
+            <span id="main-username">---</span>
+          </div>
+          <div id="google-auth-area">
+            <button id="google-signin-btn" class="btn btn-google" onclick="signInGoogle()">
+              <svg width="16" height="16" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Googleでログイン
+            </button>
+            <span id="google-signed-in" class="google-connected hidden">✓ Google連携済み</span>
+          </div>
+        </div>
+
+        <!-- Camera Button -->
+        <button class="btn-camera" onclick="openCamera()">
+          <span class="camera-icon">📷</span>
+          <span class="camera-text">領収書を撮影・アップロード</span>
+          <span class="camera-sub">カメラまたはギャラリーから選択</span>
+        </button>
+        <input type="file" id="file-input" accept="image/*" capture="environment"
+               style="display:none" onchange="handleFileSelect(event)">
+
+        <!-- Recent Expenses -->
+        <div class="recent-section">
+          <div class="recent-header">
+            <h2>最近の申請</h2>
+            <span id="recent-count" class="recent-badge">0件</span>
+          </div>
+          <div id="recent-list">
+            <p class="empty-state">まだ経費申請はありません</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== Review Page ==================== -->
+    <div id="page-review" class="page hidden">
+      <header class="app-header">
+        <button class="btn-back" onclick="showPage('main')">← 戻る</button>
+        <h1>内容確認・編集</h1>
+        <div style="width:60px"></div>
+      </header>
+
+      <div class="review-content">
+
+        <div id="receipt-preview" class="receipt-preview">
+          <span class="preview-placeholder">🧾 領収書プレビュー</span>
+        </div>
+
+        <div class="ai-badge">
+          🤖 AIが自動入力しました。内容を確認・修正してから保存してください
+        </div>
+
+        <div class="form-section">
+          <div class="form-group">
+            <label>日付 <span class="required">*</span></label>
+            <input type="date" id="review-date">
+          </div>
+
+          <div class="form-group">
+            <label>金額（円・税込） <span class="required">*</span></label>
+            <input type="number" id="review-amount" placeholder="1000" min="1">
+          </div>
+
+          <div class="form-group">
+            <label>支払先 <span class="required">*</span></label>
+            <input type="text" id="review-payee" placeholder="〇〇株式会社">
+          </div>
+
+          <div class="form-group">
+            <label>内容・品目</label>
+            <input type="text" id="review-description" placeholder="〇〇の購入">
+          </div>
+
+          <div class="form-group">
+            <label>仕訳項目</label>
+            <select id="review-category">
+              <option value="交通費">交通費</option>
+              <option value="接待費">接待費</option>
+              <option value="消耗品費">消耗品費</option>
+              <option value="会議費">会議費</option>
+              <option value="通信費">通信費</option>
+              <option value="出張費">出張費</option>
+              <option value="書籍・資料費">書籍・資料費</option>
+              <option value="その他">その他</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>備考</label>
+            <textarea id="review-notes" placeholder="目的・参加者・プロジェクト名など"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>申請者</label>
+            <input type="text" id="review-person" readonly class="input-readonly">
+          </div>
+        </div>
+
+        <div class="action-buttons">
+          <button class="btn btn-secondary" onclick="showPage('main')">キャンセル</button>
+          <button class="btn btn-primary" onclick="submitExpense()">💾 保存する</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== Success Page ==================== -->
+    <div id="page-success" class="page hidden">
+      <div class="success-content">
+        <div class="success-icon">✅</div>
+        <h2>保存完了！</h2>
+        <p class="success-sub">スプレッドシートに記録されました</p>
+
+        <div id="success-details" class="success-details"></div>
+
+        <div class="success-actions">
+          <button class="btn btn-primary btn-full" onclick="showPage('main')">
+            続けて申請する
+          </button>
+          <a id="sheet-link" href="#" target="_blank" class="btn btn-secondary btn-full">
+            📊 スプレッドシートを開く
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ==================== Settings Modal ==================== -->
+  <div id="settings-modal" class="modal hidden" onclick="handleModalClick(event)">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>⚙️ 設定</h2>
+        <button class="modal-close" onclick="closeSettings()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>あなたの名前</label>
+          <input type="text" id="settings-name">
+        </div>
+        <div class="form-group">
+          <label>Claude APIキー</label>
+          <input type="password" id="settings-claude-key">
+        </div>
+        <div class="form-group">
+          <label>Google OAuth クライアントID</label>
+          <input type="text" id="settings-google-client-id">
+        </div>
+        <div class="form-group">
+          <label>スプレッドシートID</label>
+          <input type="text" id="settings-sheet-id">
+        </div>
+        <button class="btn btn-primary btn-full" onclick="updateSettings()">保存</button>
+        <button class="btn btn-secondary btn-full" onclick="closeSettings()"
+                style="margin-top:8px">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="app.js"></script>
+</body>
+</html>
