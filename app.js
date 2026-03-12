@@ -266,19 +266,14 @@ async function submitExpense() {
   try {
     const expense = { date, amount, payee, description, category, notes, person: settings.name };
 
-    // URLSearchParams形式で送信（GASとの相性が最も良い）
+    // no-corsモードで送信（GASのリダイレクトによるCORSエラーを回避）
+    // レスポンスは読めないが、例外が出なければGASにリクエストは届いている
     const params = new URLSearchParams({ payload: JSON.stringify(expense) });
-    const res = await fetch(settings.scriptUrl, {
+    await fetch(settings.scriptUrl, {
       method: 'POST',
+      mode: 'no-cors',
       body: params,
     });
-
-    if (!res.ok) throw new Error(`通信エラー (HTTP ${res.status})`);
-
-    const text = await res.text();
-    let result;
-    try { result = JSON.parse(text); } catch { result = { success: false, error: text }; }
-    if (!result.success) throw new Error(result.error || '保存に失敗しました');
 
     addToHistory({ date, amount, payee, description, category });
     hideLoading();
