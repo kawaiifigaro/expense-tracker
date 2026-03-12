@@ -4,97 +4,159 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="theme-color" content="#2563EB">
   <title>経費精算システム</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- Loading Overlay -->
   <div id="loading-overlay" class="loading-overlay hidden">
     <div class="loading-spinner"></div>
     <p id="loading-message">処理中...</p>
   </div>
 
-  <!-- Toast -->
   <div id="toast" class="toast hidden"></div>
 
   <div id="app">
 
-    <!-- ==================== Setup Page ==================== -->
+    <!-- ========== Setup Page ========== -->
     <div id="page-setup" class="page">
       <div class="setup-container">
         <div class="setup-logo">📊</div>
         <h1>経費精算システム</h1>
-        <p class="setup-subtitle">初回設定を行ってください</p>
+        <p class="setup-subtitle">初回設定（3ステップ）</p>
 
-        <div class="setup-info">
-          設定情報はこのブラウザにのみ保存されます。他の端末と共有されません。
+        <!-- Step 1 -->
+        <div class="step-card">
+          <div class="step-header"><span class="step-num">1</span>基本情報</div>
+          <div class="form-group">
+            <label>あなたの名前 <span class="req">*</span></label>
+            <input type="text" id="setup-name" placeholder="例: 田中太郎" autocomplete="name">
+          </div>
+          <div class="form-group">
+            <label>Claude APIキー <span class="req">*</span></label>
+            <input type="password" id="setup-claude-key" placeholder="sk-ant-api03-...">
+            <small>console.anthropic.com で取得</small>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label>あなたの名前 <span class="required">*</span></label>
-          <input type="text" id="setup-name" placeholder="例: 田中太郎" autocomplete="name">
+        <!-- Step 2 -->
+        <div class="step-card">
+          <div class="step-header"><span class="step-num">2</span>Google Apps Script の設定</div>
+          <p class="step-desc">以下のコードをコピーして、スプレッドシートのApps Scriptに貼り付けてください。</p>
+
+          <ol class="setup-steps">
+            <li>Googleスプレッドシートを開く</li>
+            <li>「拡張機能」→「Apps Script」</li>
+            <li>下のコードをすべてコピーして貼り付け</li>
+            <li>「デプロイ」→「新しいデプロイ」</li>
+            <li>種類:「ウェブアプリ」、アクセス:「全員」に設定して「デプロイ」</li>
+            <li>表示されたURLをコピー</li>
+          </ol>
+
+          <div class="code-block-wrap">
+            <button class="btn-copy" onclick="copyGasCode()">📋 コピー</button>
+            <pre id="gas-code" class="code-block">function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 担当者シートを作成（初回のみ）
+    var sheet = ss.getSheetByName(data.person);
+    if (!sheet) {
+      sheet = ss.insertSheet(data.person);
+      var hdr = sheet.getRange(1, 1, 1, 8);
+      hdr.setValues([['日付','金額（円）','支払先','内容','仕訳項目','備考','申請者','提出日時']]);
+      hdr.setFontWeight('bold').setBackground('#1a73e8').setFontColor('#ffffff');
+      sheet.setFrozenRows(1);
+    }
+    sheet.appendRow([
+      data.date, Number(data.amount), data.payee,
+      data.description, data.category, data.notes || '',
+      data.person,
+      Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss')
+    ]);
+
+    updateSummary(ss);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({success: true}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({success: false, error: err.toString()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function updateSummary(ss) {
+  var sheets = ss.getSheets();
+  var summary = ss.getSheetByName('集計');
+  if (!summary) summary = ss.insertSheet('集計', 0);
+  summary.clearContents();
+
+  var rows = [['担当者', '件数', '合計金額（円）', '最終更新']];
+  var totalCount = 0, totalAmount = 0;
+
+  sheets.forEach(function(s) {
+    if (s.getName() === '集計') return;
+    var vals = s.getDataRange().getValues().slice(1).filter(function(r){ return r[0]; });
+    var count = vals.length;
+    var amount = vals.reduce(function(a, r){ return a + (Number(r[1]) || 0); }, 0);
+    totalCount += count;
+    totalAmount += amount;
+    rows.push([s.getName(), count, amount,
+      Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd')]);
+  });
+
+  rows.push(['', '', '', '']);
+  rows.push(['合計', totalCount, totalAmount, '']);
+
+  summary.getRange(1, 1, rows.length, 4).setValues(rows);
+  summary.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#1a73e8').setFontColor('#ffffff');
+  summary.getRange(rows.length, 1, 1, 3).setFontWeight('bold');
+  summary.getRange(2, 3, rows.length - 1, 1).setNumberFormat('¥#,##0');
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput('OK');
+}</pre>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label>Claude APIキー <span class="required">*</span></label>
-          <input type="password" id="setup-claude-key" placeholder="sk-ant-api03-...">
-          <small>Anthropic Console (console.anthropic.com) で取得できます</small>
-        </div>
-
-        <div class="form-group">
-          <label>Google OAuth クライアントID <span class="required">*</span></label>
-          <input type="text" id="setup-google-client-id"
-                 placeholder="000000000-xxxx.apps.googleusercontent.com">
-          <small>Google Cloud Console → APIとサービス → 認証情報 → OAuthクライアントID（Webアプリ）を作成。このページのURLを承認済みのJavaScriptオリジンに追加してください。</small>
-        </div>
-
-        <div class="form-group">
-          <label>スプレッドシートID <span class="required">*</span></label>
-          <input type="text" id="setup-sheet-id"
-                 placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
-          <small>Google スプレッドシートのURLの <code>…/d/<b>ここの部分</b>/edit…</code></small>
+        <!-- Step 3 -->
+        <div class="step-card">
+          <div class="step-header"><span class="step-num">3</span>ウェブアプリURLを入力</div>
+          <div class="form-group">
+            <label>Apps Script ウェブアプリURL <span class="req">*</span></label>
+            <input type="url" id="setup-script-url"
+                   placeholder="https://script.google.com/macros/s/.../exec">
+          </div>
         </div>
 
         <button class="btn btn-primary btn-full" onclick="saveSetup()">
-          設定を保存して開始
+          設定を保存して開始 →
         </button>
       </div>
     </div>
 
-    <!-- ==================== Main Page ==================== -->
+    <!-- ========== Main Page ========== -->
     <div id="page-main" class="page hidden">
       <header class="app-header">
         <span class="header-icon">📊</span>
         <h1>経費精算</h1>
-        <button class="btn-icon" onclick="showSettings()" title="設定">⚙️</button>
+        <button class="btn-icon" onclick="showSettings()">⚙️</button>
       </header>
 
       <div class="main-content">
-
-        <!-- User Card -->
         <div class="user-card">
           <div class="user-info">
             <span class="user-avatar">👤</span>
             <span id="main-username">---</span>
           </div>
-          <div id="google-auth-area">
-            <button id="google-signin-btn" class="btn btn-google" onclick="signInGoogle()">
-              <svg width="16" height="16" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              Googleでログイン
-            </button>
-            <span id="google-signed-in" class="google-connected hidden">✓ Google連携済み</span>
-          </div>
+          <span class="user-status">✓ 設定済み</span>
         </div>
 
-        <!-- Camera Button -->
         <button class="btn-camera" onclick="openCamera()">
           <span class="camera-icon">📷</span>
           <span class="camera-text">領収書を撮影・アップロード</span>
@@ -103,7 +165,6 @@
         <input type="file" id="file-input" accept="image/*" capture="environment"
                style="display:none" onchange="handleFileSelect(event)">
 
-        <!-- Recent Expenses -->
         <div class="recent-section">
           <div class="recent-header">
             <h2>最近の申請</h2>
@@ -113,11 +174,10 @@
             <p class="empty-state">まだ経費申請はありません</p>
           </div>
         </div>
-
       </div>
     </div>
 
-    <!-- ==================== Review Page ==================== -->
+    <!-- ========== Review Page ========== -->
     <div id="page-review" class="page hidden">
       <header class="app-header">
         <button class="btn-back" onclick="showPage('main')">← 戻る</button>
@@ -126,36 +186,29 @@
       </header>
 
       <div class="review-content">
-
         <div id="receipt-preview" class="receipt-preview">
           <span class="preview-placeholder">🧾 領収書プレビュー</span>
         </div>
 
-        <div class="ai-badge">
-          🤖 AIが自動入力しました。内容を確認・修正してから保存してください
-        </div>
+        <div class="ai-badge">🤖 AIが自動入力しました。内容を確認・修正してから保存してください</div>
 
         <div class="form-section">
           <div class="form-group">
-            <label>日付 <span class="required">*</span></label>
+            <label>日付 <span class="req">*</span></label>
             <input type="date" id="review-date">
           </div>
-
           <div class="form-group">
-            <label>金額（円・税込） <span class="required">*</span></label>
+            <label>金額（円・税込） <span class="req">*</span></label>
             <input type="number" id="review-amount" placeholder="1000" min="1">
           </div>
-
           <div class="form-group">
-            <label>支払先 <span class="required">*</span></label>
+            <label>支払先 <span class="req">*</span></label>
             <input type="text" id="review-payee" placeholder="〇〇株式会社">
           </div>
-
           <div class="form-group">
             <label>内容・品目</label>
             <input type="text" id="review-description" placeholder="〇〇の購入">
           </div>
-
           <div class="form-group">
             <label>仕訳項目</label>
             <select id="review-category">
@@ -169,12 +222,10 @@
               <option value="その他">その他</option>
             </select>
           </div>
-
           <div class="form-group">
             <label>備考</label>
-            <textarea id="review-notes" placeholder="目的・参加者・プロジェクト名など"></textarea>
+            <textarea id="review-notes" placeholder="目的・参加者など"></textarea>
           </div>
-
           <div class="form-group">
             <label>申請者</label>
             <input type="text" id="review-person" readonly class="input-readonly">
@@ -185,33 +236,26 @@
           <button class="btn btn-secondary" onclick="showPage('main')">キャンセル</button>
           <button class="btn btn-primary" onclick="submitExpense()">💾 保存する</button>
         </div>
-
       </div>
     </div>
 
-    <!-- ==================== Success Page ==================== -->
+    <!-- ========== Success Page ========== -->
     <div id="page-success" class="page hidden">
       <div class="success-content">
         <div class="success-icon">✅</div>
         <h2>保存完了！</h2>
         <p class="success-sub">スプレッドシートに記録されました</p>
-
         <div id="success-details" class="success-details"></div>
-
         <div class="success-actions">
-          <button class="btn btn-primary btn-full" onclick="showPage('main')">
-            続けて申請する
-          </button>
-          <a id="sheet-link" href="#" target="_blank" class="btn btn-secondary btn-full">
-            📊 スプレッドシートを開く
-          </a>
+          <button class="btn btn-primary btn-full" onclick="showPage('main')">続けて申請する</button>
+          <a id="sheet-link" href="#" target="_blank" class="btn btn-secondary btn-full">📊 スプレッドシートを開く</a>
         </div>
       </div>
     </div>
 
   </div>
 
-  <!-- ==================== Settings Modal ==================== -->
+  <!-- Settings Modal -->
   <div id="settings-modal" class="modal hidden" onclick="handleModalClick(event)">
     <div class="modal-content">
       <div class="modal-header">
@@ -228,21 +272,19 @@
           <input type="password" id="settings-claude-key">
         </div>
         <div class="form-group">
-          <label>Google OAuth クライアントID</label>
-          <input type="text" id="settings-google-client-id">
+          <label>Apps Script ウェブアプリURL</label>
+          <input type="url" id="settings-script-url">
         </div>
         <div class="form-group">
-          <label>スプレッドシートID</label>
-          <input type="text" id="settings-sheet-id">
+          <label>スプレッドシートURL（任意・「開く」ボタン用）</label>
+          <input type="url" id="settings-sheet-url" placeholder="https://docs.google.com/spreadsheets/...">
         </div>
         <button class="btn btn-primary btn-full" onclick="updateSettings()">保存</button>
-        <button class="btn btn-secondary btn-full" onclick="closeSettings()"
-                style="margin-top:8px">キャンセル</button>
+        <button class="btn btn-secondary btn-full" onclick="closeSettings()" style="margin-top:8px">キャンセル</button>
       </div>
     </div>
   </div>
 
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="app.js"></script>
 </body>
 </html>
