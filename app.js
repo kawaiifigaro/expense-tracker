@@ -265,33 +265,47 @@ function submitExpense() {
   }
 
   const expense = { date, amount, payee, description, category, notes, person: settings.name };
+  const frame   = document.getElementById('gas-frame');
+  let settled   = false;
 
-  // GASがiframe内でpostMessageを送ってくるのを待つ
+  function succeed() {
+    if (settled) return;
+    settled = true;
+    clearTimeout(_submitTimer);
+    frame.onload = null;
+    window.removeEventListener('message', onMessage);
+    addToHistory({ date, amount, payee, description, category });
+    hideLoading();
+    showSuccessPage(expense);
+  }
+
+  function fail(msg) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(_submitTimer);
+    frame.onload = null;
+    window.removeEventListener('message', onMessage);
+    hideLoading();
+    showToast('保存エラー: ' + msg, 'error');
+  }
+
+  // ① postMessage方式（GASがHtmlServiceで返す場合 — Chrome/デスクトップ等）
   function onMessage(event) {
     let result;
     try { result = JSON.parse(event.data); } catch { return; }
-    if (typeof result.success === 'undefined') return; // 無関係なメッセージは無視
-
-    window.removeEventListener('message', onMessage);
-    clearTimeout(_submitTimer);
-
-    if (result.success) {
-      addToHistory({ date, amount, payee, description, category });
-      hideLoading();
-      showSuccessPage(expense);
-    } else {
-      hideLoading();
-      showToast('保存エラー: ' + (result.error || '不明なエラー'), 'error');
-    }
+    if (typeof result.success === 'undefined') return;
+    result.success ? succeed() : fail(result.error || '不明なエラー');
   }
   window.addEventListener('message', onMessage);
 
+  // ② iframe onloadフォールバック（iOS SafarでpostMessageが届かない場合）
+  // onloadはGASがレスポンスを返した後に必ず発火するため信頼性が高い
+  frame.onload = function () {
+    setTimeout(succeed, 400); // postMessageが先に来た場合はsettled=trueで無視される
+  };
+
   // 30秒タイムアウト
-  _submitTimer = setTimeout(function () {
-    window.removeEventListener('message', onMessage);
-    hideLoading();
-    showToast('タイムアウト: Apps ScriptのURLと設定を確認してください', 'error');
-  }, 30000);
+  _submitTimer = setTimeout(function () { fail('タイムアウト。URLを確認してください'); }, 30000);
 
   // フォームをiframeにPOST送信（CORSなし）
   const form = document.getElementById('gas-form');
