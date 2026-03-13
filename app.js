@@ -266,10 +266,10 @@ async function submitExpense() {
   try {
     const expense = { date, amount, payee, description, category, notes, person: settings.name };
 
-    // GETリクエスト＋URLパラメータ方式（POSTはリダイレクト時にボディが消えるため）
-    // GETはCORSエラーなし・レスポンスも読める・iPhoneでも動作する
-    const url = settings.scriptUrl + '?payload=' + encodeURIComponent(JSON.stringify(expense));
-    const res = await fetch(url);
+    // URLオブジェクトで安全にパラメータをセット（iOS Safariでの文字列連結エラーを回避）
+    const endpoint = new URL(settings.scriptUrl.trim());
+    endpoint.searchParams.set('payload', JSON.stringify(expense));
+    const res = await fetch(endpoint.toString());
     if (!res.ok) throw new Error(`通信エラー (HTTP ${res.status})`);
     const result = await res.json();
     if (!result.success) throw new Error(result.error || 'GASでエラーが発生しました');
