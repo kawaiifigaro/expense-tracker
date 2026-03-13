@@ -3,7 +3,10 @@
 // ============================================================
 // State
 // ============================================================
-let settings = { name: '', claudeApiKey: '', scriptUrl: '', sheetUrl: '' };
+// GASを再デプロイしたらここのURLを更新してGitHubにプッシュするだけでOK
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzYyiZlT1qPWERRbZDgDlP_4As3jKExc8d7nu_XK_r63AIN6v9x4hGhtBNlJO470B-d/exec';
+
+let settings = { name: '', claudeApiKey: '', scriptUrl: DEFAULT_GAS_URL, sheetUrl: '' };
 let currentImageData = null;
 let currentMimeType  = 'image/jpeg';
 let toastTimer       = null;
@@ -57,6 +60,11 @@ function loadSettings() {
   try {
     const s = localStorage.getItem('expense_settings');
     if (s) settings = { ...settings, ...JSON.parse(s) };
+    // コードのURLが新しければ自動で上書き（再デプロイ後に設定を手動変更不要）
+    if (!settings.scriptUrl || settings.scriptUrl !== DEFAULT_GAS_URL) {
+      settings.scriptUrl = DEFAULT_GAS_URL;
+      persistSettings();
+    }
   } catch (e) { /* ignore */ }
 }
 
