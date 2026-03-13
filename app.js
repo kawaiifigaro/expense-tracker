@@ -242,9 +242,12 @@ async function analyzeWithClaude(base64, mimeType) {
 }
 
 // ============================================================
-// Submit → Google Apps Script
+// Submit → Google Apps Script（フォーム送信方式・CORSなし）
 // ============================================================
-async function submitExpense() {
+let _pendingExpense = null;
+let _submitTimer    = null;
+
+function submitExpense() {
   const date        = val('review-date');
   const amountStr   = val('review-amount');
   const payee       = val('review-payee');
@@ -262,25 +265,38 @@ async function submitExpense() {
     return;
   }
 
+  const expense = { date, amount, payee, description, category, notes, person: settings.name };
+
+  // フォームのaction・payloadをセット
+  const form = document.getElementById('gas-form');
+  form.action = settings.scriptUrl.trim();
+  document.getElementById('gas-payload').value = JSON.stringify(expense);
+
+  // iframeのloadイベントで完了を検知（cross-originのため中身は読めないが送信完了はわかる）
+  const frame = document.getElementById('gas-frame');
+  _pendingExpense = expense;
+
+  frame.onload = function () {
+    frame.onload = null;
+    clearTimeout(_submitTimer);
+    addToHistory({ date: _pendingExpense.date, amount: _pendingExpense.amount,
+                   payee: _pendingExpense.payee, description: _pendingExpense.description,
+                   category: _pendingExpense.category });
+    hideLoading();
+    showSuccessPage(_pendingExpense);
+    _pendingExpense = null;
+  };
+
+  // 30秒でタイムアウト
+  _submitTimer = setTimeout(function () {
+    frame.onload = null;
+    hideLoading();
+    showToast('タイムアウト: Apps ScriptのURLを確認してください', 'error');
+    _pendingExpense = null;
+  }, 30000);
+
   showLoading('スプレッドシートに保存中...');
-  try {
-    const expense = { date, amount, payee, description, category, notes, person: settings.name };
-
-    // URLオブジェクトで安全にパラメータをセット（iOS Safariでの文字列連結エラーを回避）
-    const endpoint = new URL(settings.scriptUrl.trim());
-    endpoint.searchParams.set('payload', JSON.stringify(expense));
-    const res = await fetch(endpoint.toString());
-    if (!res.ok) throw new Error(`通信エラー (HTTP ${res.status})`);
-    const result = await res.json();
-    if (!result.success) throw new Error(result.error || 'GASでエラーが発生しました');
-
-    addToHistory({ date, amount, payee, description, category });
-    hideLoading();
-    showSuccessPage({ date, amount, payee, description, category });
-  } catch (e) {
-    hideLoading();
-    showToast('保存エラー: ' + e.message, 'error');
-  }
+  form.submit();
 }
 
 // ============================================================
