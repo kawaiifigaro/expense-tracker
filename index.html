@@ -285,11 +285,10 @@ function doGet(e) {
     </div>
   </div>
 
-  <!-- GAS送信用フォーム＆iframe（CORSなしでPOST可能） -->
-  <form id="gas-form" method="POST" target="gas-frame" style="display:none">
+  <!-- GAS送信用フォーム（フルページPOST → GASがアプリにリダイレクト） -->
+  <form id="gas-form" method="POST" style="display:none">
     <input type="hidden" name="payload" id="gas-payload">
   </form>
-  <iframe id="gas-frame" name="gas-frame" style="display:none"></iframe>
 
   <script src="app.js"></script>
 </body>

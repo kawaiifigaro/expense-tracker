@@ -13,6 +13,34 @@ let toastTimer       = null;
 // ============================================================
 window.addEventListener('load', () => {
   loadSettings();
+
+  // GASからのリダイレクト結果を処理
+  const params    = new URLSearchParams(location.search);
+  const gasStatus = params.get('gas');
+  if (gasStatus) {
+    history.replaceState({}, '', location.pathname); // URLからパラメータを消す
+    const pending = JSON.parse(localStorage.getItem('gas_pending') || 'null');
+    localStorage.removeItem('gas_pending');
+
+    if (isSetupComplete()) {
+      showPage('main');
+      document.getElementById('main-username').textContent = settings.name;
+      renderRecentExpenses();
+    } else {
+      showPage('setup');
+    }
+
+    if (gasStatus === 'success' && pending) {
+      addToHistory(pending);
+      renderRecentExpenses();
+      showSuccessPage(pending);
+    } else {
+      showToast('保存エラー: ' + (params.get('msg') || '不明なエラー'), 'error');
+    }
+    return;
+  }
+
+  // 通常起動
   if (isSetupComplete()) {
     showPage('main');
     document.getElementById('main-username').textContent = settings.name;
@@ -244,8 +272,6 @@ async function analyzeWithClaude(base64, mimeType) {
 // ============================================================
 // Submit → Google Apps Script（フォーム送信方式・CORSなし）
 // ============================================================
-let _submitTimer = null;
-
 function submitExpense() {
   const date        = val('review-date');
   const amountStr   = val('review-amount');
@@ -265,53 +291,14 @@ function submitExpense() {
   }
 
   const expense = { date, amount, payee, description, category, notes, person: settings.name };
-  const frame   = document.getElementById('gas-frame');
-  let settled   = false;
 
-  function succeed() {
-    if (settled) return;
-    settled = true;
-    clearTimeout(_submitTimer);
-    frame.onload = null;
-    window.removeEventListener('message', onMessage);
-    addToHistory({ date, amount, payee, description, category });
-    hideLoading();
-    showSuccessPage(expense);
-  }
+  // GASリダイレクト後に結果を表示するため送信データをlocalStorageに保存
+  localStorage.setItem('gas_pending', JSON.stringify(expense));
 
-  function fail(msg) {
-    if (settled) return;
-    settled = true;
-    clearTimeout(_submitTimer);
-    frame.onload = null;
-    window.removeEventListener('message', onMessage);
-    hideLoading();
-    showToast('保存エラー: ' + msg, 'error');
-  }
-
-  // ① postMessage方式（GASがHtmlServiceで返す場合 — Chrome/デスクトップ等）
-  function onMessage(event) {
-    let result;
-    try { result = JSON.parse(event.data); } catch { return; }
-    if (typeof result.success === 'undefined') return;
-    result.success ? succeed() : fail(result.error || '不明なエラー');
-  }
-  window.addEventListener('message', onMessage);
-
-  // ② iframe onloadフォールバック（iOS SafarでpostMessageが届かない場合）
-  // onloadはGASがレスポンスを返した後に必ず発火するため信頼性が高い
-  frame.onload = function () {
-    setTimeout(succeed, 400); // postMessageが先に来た場合はsettled=trueで無視される
-  };
-
-  // 30秒タイムアウト
-  _submitTimer = setTimeout(function () { fail('タイムアウト。URLを確認してください'); }, 30000);
-
-  // フォームをiframeにPOST送信（CORSなし）
+  // フルページPOST送信（iframe不使用）→ GASが処理後にこのアプリへリダイレクト
   const form = document.getElementById('gas-form');
   form.action = settings.scriptUrl.trim();
   document.getElementById('gas-payload').value = JSON.stringify(expense);
-  showLoading('スプレッドシートに保存中...');
   form.submit();
 }
 
