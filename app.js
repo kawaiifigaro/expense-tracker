@@ -266,14 +266,13 @@ async function submitExpense() {
   try {
     const expense = { date, amount, payee, description, category, notes, person: settings.name };
 
-    // no-corsモードで送信（GASのリダイレクトによるCORSエラーを回避）
-    // レスポンスは読めないが、例外が出なければGASにリクエストは届いている
-    const params = new URLSearchParams({ payload: JSON.stringify(expense) });
-    await fetch(settings.scriptUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: params,
-    });
+    // GETリクエスト＋URLパラメータ方式（POSTはリダイレクト時にボディが消えるため）
+    // GETはCORSエラーなし・レスポンスも読める・iPhoneでも動作する
+    const url = settings.scriptUrl + '?payload=' + encodeURIComponent(JSON.stringify(expense));
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`通信エラー (HTTP ${res.status})`);
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error || 'GASでエラーが発生しました');
 
     addToHistory({ date, amount, payee, description, category });
     hideLoading();
