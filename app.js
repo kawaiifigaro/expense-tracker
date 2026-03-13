@@ -244,8 +244,7 @@ async function analyzeWithClaude(base64, mimeType) {
 // ============================================================
 // Submit → Google Apps Script（フォーム送信方式・CORSなし）
 // ============================================================
-let _pendingExpense = null;
-let _submitTimer    = null;
+let _submitTimer = null;
 
 function submitExpense() {
   const date        = val('review-date');
@@ -267,34 +266,37 @@ function submitExpense() {
 
   const expense = { date, amount, payee, description, category, notes, person: settings.name };
 
-  // フォームのaction・payloadをセット
+  // GASがiframe内でpostMessageを送ってくるのを待つ
+  function onMessage(event) {
+    let result;
+    try { result = JSON.parse(event.data); } catch { return; }
+    if (typeof result.success === 'undefined') return; // 無関係なメッセージは無視
+
+    window.removeEventListener('message', onMessage);
+    clearTimeout(_submitTimer);
+
+    if (result.success) {
+      addToHistory({ date, amount, payee, description, category });
+      hideLoading();
+      showSuccessPage(expense);
+    } else {
+      hideLoading();
+      showToast('保存エラー: ' + (result.error || '不明なエラー'), 'error');
+    }
+  }
+  window.addEventListener('message', onMessage);
+
+  // 30秒タイムアウト
+  _submitTimer = setTimeout(function () {
+    window.removeEventListener('message', onMessage);
+    hideLoading();
+    showToast('タイムアウト: Apps ScriptのURLと設定を確認してください', 'error');
+  }, 30000);
+
+  // フォームをiframeにPOST送信（CORSなし）
   const form = document.getElementById('gas-form');
   form.action = settings.scriptUrl.trim();
   document.getElementById('gas-payload').value = JSON.stringify(expense);
-
-  // iframeのloadイベントで完了を検知（cross-originのため中身は読めないが送信完了はわかる）
-  const frame = document.getElementById('gas-frame');
-  _pendingExpense = expense;
-
-  frame.onload = function () {
-    frame.onload = null;
-    clearTimeout(_submitTimer);
-    addToHistory({ date: _pendingExpense.date, amount: _pendingExpense.amount,
-                   payee: _pendingExpense.payee, description: _pendingExpense.description,
-                   category: _pendingExpense.category });
-    hideLoading();
-    showSuccessPage(_pendingExpense);
-    _pendingExpense = null;
-  };
-
-  // 30秒でタイムアウト
-  _submitTimer = setTimeout(function () {
-    frame.onload = null;
-    hideLoading();
-    showToast('タイムアウト: Apps ScriptのURLを確認してください', 'error');
-    _pendingExpense = null;
-  }, 30000);
-
   showLoading('スプレッドシートに保存中...');
   form.submit();
 }
